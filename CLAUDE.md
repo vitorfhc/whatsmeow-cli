@@ -78,6 +78,16 @@ Lint tools live in `$(go env GOPATH)/bin`. If `golangci-lint` reports it was
 built with an older Go than the module targets, reinstall it forcing the
 toolchain: `GOTOOLCHAIN=go1.25.11 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest`.
 
+## Releases
+
+`VERSION.txt` is the release source of truth and contains a plain semantic
+version without a leading `v` (for example, `0.0.1`). Every push to `main`
+runs `.github/workflows/release.yml`, which derives tag/release name
+`v<VERSION.txt>` and creates a source-only GitHub Release for that commit.
+If the tag already exists, the workflow exits successfully without creating
+another release. Bump `VERSION.txt` before merging when a new release is
+intended.
+
 ## whatsmeow Go-version gotcha
 
 `whatsmeow@latest` requires **Go ≥ 1.25** (its `go.mod` sets a `go1.26`
