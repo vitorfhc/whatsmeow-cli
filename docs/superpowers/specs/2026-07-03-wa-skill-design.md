@@ -1,11 +1,11 @@
-# Design: `wa` Claude skill
+# Design: `whatsapp-cli` agent skill
 
 Date: 2026-07-03
 Status: approved
 
 ## 1. Goal
 
-A Claude skill that drives the `wa` WhatsApp CLI so any Claude session can
+A skill that drives the `wa` WhatsApp CLI so any agent session can
 send WhatsApp messages, read received messages, list chats, and link the
 account on the user's behalf. This is the "separate deliverable" anticipated
 by §12 of the MVP design spec
@@ -16,7 +16,7 @@ otherwise be an MCP server.
 
 | Decision | Choice |
 |---|---|
-| Location | `skills/wa/` at the repo root. Not auto-loaded anywhere; the user copies or symlinks it into `~/.claude/skills/wa` (install note in the skill/README). |
+| Location | `skills/whatsapp-cli/` at the repo root. Install with `npx --yes skills add vitorfhc/whatsmeow-cli --skill whatsapp-cli`. |
 | Scope | Full lifecycle: locate/build the binary, daemon start/stop, account linking (pairing code + QR), send, read, chats, troubleshooting. |
 | Binary resolution | `wa` on PATH first; fallback to building from the whatsmeow-cli checkout (`make build`); suggest a permanent install once, never block on it. |
 | Send policy | Confirm-unless-explicit: if the human's request already contains the exact recipient and message text, send; otherwise show drafted recipient + text and get a yes first. |
@@ -27,7 +27,7 @@ otherwise be an MCP server.
 
 ### 3.1 Frontmatter
 
-- `name: wa`
+- `name: whatsapp-cli`
 - `description`: triggers on sending a WhatsApp message, reading/checking
   WhatsApp messages, listing WhatsApp chats/conversations, linking or logging
   in a WhatsApp account, and waiting for a reply. States that it drives the

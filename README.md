@@ -103,12 +103,12 @@ Success prints JSON to stdout and exits 0. Failure prints
 
 ## Agent skill
 
-`skills/wa/SKILL.md` is an agent skill that drives this CLI (binary
+`skills/whatsapp-cli/SKILL.md` is an agent skill that drives this CLI (binary
 resolution, daemon preflight, linking, sending with confirmation rules,
 reading without leaking read receipts). Install it with:
 
 ```
-npx --yes skills add vitorfhc/whatsmeow-cli --skill wa
+npx --yes skills add vitorfhc/whatsmeow-cli --skill whatsapp-cli
 ```
 
 ## Development
