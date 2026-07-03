@@ -1,0 +1,16 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck      # unchecked errors
+    - govet         # suspicious constructs
+    - ineffassign   # ineffectual assignments
+    - misspell      # common misspellings
+    - staticcheck   # bugs, simplifications (includes gosimple)
+    - unused        # unused code
+
+linters-settings:
+  errcheck:
+    # Deferred resource cleanup whose error is not actionable may use `_ =`.
+    check-blank: false

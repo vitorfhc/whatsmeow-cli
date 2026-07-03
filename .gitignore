@@ -1,0 +1,16 @@
+# Compiled binary
+/wa
+/dist/
+
+# Local data / runtime artifacts
+*.db
+*.db-wal
+*.db-shm
+*.sock
+*.pid
+*.log
+
+# Go
+*.test
+*.out
+coverage.*
