@@ -60,7 +60,9 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn, ln net.Listener) 
 	}
 }
 
-// Close disconnects the WhatsApp client. Call after Serve returns.
+// Close cancels the daemon-lifetime context (stopping any background QR
+// session) and disconnects the WhatsApp client. Call after Serve returns.
 func (d *Daemon) Close() {
+	d.cancel()
 	d.client.Disconnect()
 }

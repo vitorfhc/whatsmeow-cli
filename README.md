@@ -25,6 +25,8 @@ make build        # produces ./wa
 ```
 ./wa start                          # start the background daemon
 ./wa login 5511999999999            # returns a pairing code to enter on your phone
+# or, to link by scanning instead of typing a code:
+./wa login-qr | jq -r .qr           # prints a scannable QR block; scan it with your phone
 ./wa status                         # poll until "logged_in": true
 ./wa send 5511999999999 "hello"     # send a text message
 ./wa messages                       # list new (unseen) received messages
@@ -35,6 +37,12 @@ make build        # produces ./wa
 Linking (login): open WhatsApp on your phone → Settings → Linked Devices →
 Link a device → "Link with phone number instead" → enter the pairing code.
 
+QR login (`wa login-qr`) is an alternative: it returns a QR code rendered as a
+terminal block in the `qr` JSON field (stdout stays pure JSON, so view it with
+`wa login-qr | jq -r .qr` or let the agent print it), which you scan from the
+same Linked Devices screen. The code is single-shot and expires (~60s); if it
+lapses, wait for the session to time out and rerun `wa login-qr`.
+
 ## Commands
 
 | Command | Description |
@@ -43,6 +51,7 @@ Link a device → "Link with phone number instead" → enter the pairing code.
 | `wa stop` | Stop the daemon. |
 | `wa status` | Daemon/connection state (JSON). |
 | `wa login <phone>` | Link an account via pairing code. |
+| `wa login-qr` | Link an account by scanning a QR code (returned in the `qr` field). |
 | `wa logout [--purge]` | Unlink the account (`--purge` also clears stored messages). |
 | `wa send <recipient> <text>` | Send a text message (recipient = phone or JID). |
 | `wa messages [flags]` | List received messages. Flags: `--chat`, `--unread`, `--all`, `--since <RFC3339>`, `--limit`, `--mark-read`. |

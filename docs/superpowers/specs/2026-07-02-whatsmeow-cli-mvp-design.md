@@ -535,7 +535,7 @@ Because every command emits JSON and clear exit codes, the skill can branch dete
 Ordered roughly by likely value:
 1. **Media send** (image/audio/video/document/sticker) via `Upload` + building the media `waE2E.Message` struct.
 2. **Media download** for received messages (`Download`/`DownloadToFile`), exposed as `wa download <chat> <message-id>`.
-3. **QR login** as an alternative to pairing code (`GetQRChannel` + terminal QR rendering).
+3. ~~**QR login** as an alternative to pairing code (`GetQRChannel` + terminal QR rendering).~~ **Done** — `wa login-qr` returns the first QR code rendered as a half-block terminal string in the `qr` field (single-shot; caller polls `wa status` for completion).
 4. **Reactions, edits, delete/revoke, replies, @mentions** (`BuildReaction`/`BuildEdit`/`BuildRevoke`, `ContextInfo`).
 5. **Contact/user lookup:** `IsOnWhatsApp`, `GetUserInfo`, profile pictures, business profiles; proper contact-name resolution for output.
 6. **Group management:** create, info, participants add/remove/promote, invite links.
@@ -551,7 +551,7 @@ Ordered roughly by likely value:
 ## 14. Open Questions / Assumptions to Confirm
 
 These were decided by best-judgment defaults while finalizing the MVP; confirm or override:
-- **Login method:** pairing code only for v1 (QR deferred). *Rationale: simplest, and easiest to relay through a Claude chat.*
+- **Login method:** pairing code for v1 (`wa login`); QR login added as a fast-follow (`wa login-qr`, see roadmap item 3). *Rationale: pairing code is simplest and easiest to relay through a Claude chat; QR is offered for users who prefer scanning.*
 - **Receive scope:** store all message types with placeholders; no media download in v1.
 - **Accounts:** single account only.
 - **Presence:** daemon stays "invisible" (does not send `PresenceAvailable`) in v1. Trade-off: default delivery receipts may be sent as `inactive` (no gray ticks) — acceptable for the MVP. Revisit with the presence fast-follow.

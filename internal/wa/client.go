@@ -17,6 +17,16 @@ const (
 	pairSettleDelay       = time.Second
 )
 
+// QRItem is one event from a QR login channel: a new scannable code, or a
+// terminal outcome. It mirrors whatsmeow's QRChannelItem without leaking that
+// type across the Client interface.
+type QRItem struct {
+	Event   string        // "code", "success", "timeout", "error", ...
+	Code    string        // raw QR payload when Event == "code"
+	Timeout time.Duration // validity window of this code
+	Err     error         // set when Event == "error"
+}
+
 // Client is the minimal WhatsApp surface the daemon depends on. It is an
 // interface so the daemon can be tested with a fake instead of a live
 // connection.
@@ -27,6 +37,7 @@ type Client interface {
 	IsConnected() bool
 	Logout(ctx context.Context) error
 	PairPhone(ctx context.Context, phone string) (code string, err error)
+	GetQRChannel(ctx context.Context) (<-chan QRItem, error)
 	SendText(ctx context.Context, to types.JID, text string) (id string, ts time.Time, err error)
 	MarkRead(ctx context.Context, ids []types.MessageID, chat, sender types.JID) error
 	OwnID() (jid types.JID, paired bool)
@@ -91,6 +102,30 @@ func (r *RealClient) PairPhone(ctx context.Context, phone string) (string, error
 		return "", fmt.Errorf("pair phone: %w", err)
 	}
 	return code, nil
+}
+
+// GetQRChannel starts a QR login and returns a channel of QR events. whatsmeow
+// requires this to be called before Connect and only when the device is not
+// yet linked (Store.ID == nil). Each whatsmeow item is translated to a wa.QRItem
+// so the interface stays free of the whatsmeow dependency.
+func (r *RealClient) GetQRChannel(ctx context.Context) (<-chan QRItem, error) {
+	src, err := r.cli.GetQRChannel(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get qr channel: %w", err)
+	}
+	out := make(chan QRItem, 8)
+	go func() {
+		defer close(out)
+		for item := range src {
+			out <- QRItem{
+				Event:   item.Event,
+				Code:    item.Code,
+				Timeout: item.Timeout,
+				Err:     item.Error,
+			}
+		}
+	}()
+	return out, nil
 }
 
 // SendText sends a plain text message and returns the server ID and timestamp.

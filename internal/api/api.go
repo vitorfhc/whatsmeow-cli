@@ -66,6 +66,14 @@ type LoginResult struct {
 	Instructions     string `json:"instructions"`
 }
 
+// LoginQRResult carries a scannable QR code (rendered as a terminal block) for
+// linking by phone camera. `wa login-qr` takes no arguments.
+type LoginQRResult struct {
+	QR               string `json:"qr"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+	Instructions     string `json:"instructions"`
+}
+
 // LogoutArgs is the payload of `wa logout`.
 type LogoutArgs struct {
 	Purge bool `json:"purge,omitempty"`

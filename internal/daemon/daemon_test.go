@@ -13,6 +13,7 @@ import (
 	"github.com/busfactor/whatsmeow-cli/internal/api"
 	"github.com/busfactor/whatsmeow-cli/internal/ipc"
 	"github.com/busfactor/whatsmeow-cli/internal/store"
+	"github.com/busfactor/whatsmeow-cli/internal/wa"
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -24,24 +25,27 @@ import (
 // WhatsApp connection. Its mutating methods are guarded so it is safe to use
 // from concurrent requests in the server tests.
 type fakeClient struct {
-	mu            sync.Mutex
-	handler       func(evt any)
-	connected     bool
-	paired        bool
-	ownJID        types.JID
-	pushName      string
-	pairCode      string
-	pairErr       error
-	connectCalled bool
-	pairPhoneArg  string
-	sentID        string
-	sentTs        time.Time
-	sendErr       error
-	sentTo        types.JID
-	sentText      string
-	logoutErr     error
-	logoutCalled  bool
-	markReadIDs   []types.MessageID
+	mu              sync.Mutex
+	handler         func(evt any)
+	connected       bool
+	paired          bool
+	ownJID          types.JID
+	pushName        string
+	pairCode        string
+	pairErr         error
+	qrItems         []wa.QRItem
+	qrErr           error
+	qrChannelCalled bool
+	connectCalled   bool
+	pairPhoneArg    string
+	sentID          string
+	sentTs          time.Time
+	sendErr         error
+	sentTo          types.JID
+	sentText        string
+	logoutErr       error
+	logoutCalled    bool
+	markReadIDs     []types.MessageID
 }
 
 func (f *fakeClient) AddEventHandler(h func(evt any)) { f.handler = h }
@@ -87,6 +91,20 @@ func (f *fakeClient) PairPhone(_ context.Context, phone string) (string, error) 
 		return "", f.pairErr
 	}
 	return f.pairCode, nil
+}
+func (f *fakeClient) GetQRChannel(context.Context) (<-chan wa.QRItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.qrChannelCalled = true
+	if f.qrErr != nil {
+		return nil, f.qrErr
+	}
+	ch := make(chan wa.QRItem, len(f.qrItems))
+	for _, it := range f.qrItems {
+		ch <- it
+	}
+	close(ch)
+	return ch, nil
 }
 func (f *fakeClient) SendText(_ context.Context, to types.JID, text string) (string, time.Time, error) {
 	f.mu.Lock()
@@ -265,6 +283,64 @@ func TestLoginFailure(t *testing.T) {
 	fc := &fakeClient{paired: false, pairErr: io.ErrUnexpectedEOF}
 	d := newTestDaemon(t, fc)
 	resp := handle(t, d, "login", api.LoginArgs{Phone: "5511999999999"})
+	if resp.OK || resp.Error != api.ErrLoginFailed {
+		t.Fatalf("resp = %+v, want login_failed", resp)
+	}
+}
+
+func TestLoginQRReturnsCode(t *testing.T) {
+	fc := &fakeClient{paired: false, qrItems: []wa.QRItem{
+		{Event: "code", Code: "2@ABC,DEF,GHI", Timeout: 60 * time.Second},
+		{Event: "success"},
+	}}
+	d := newTestDaemon(t, fc)
+	resp := handle(t, d, "login-qr", nil)
+	if !resp.OK {
+		t.Fatalf("login-qr err: %+v", resp)
+	}
+	var r api.LoginQRResult
+	if err := resp.Bind(&r); err != nil {
+		t.Fatal(err)
+	}
+	if r.QR == "" {
+		t.Error("expected a rendered QR block")
+	}
+	if r.ExpiresInSeconds != 60 {
+		t.Errorf("ExpiresInSeconds = %d, want 60", r.ExpiresInSeconds)
+	}
+	if r.Instructions == "" {
+		t.Error("expected instructions")
+	}
+	if !fc.qrChannelCalled {
+		t.Error("expected GetQRChannel to be called")
+	}
+	if !fc.connectCalled {
+		t.Error("expected Connect to be called")
+	}
+}
+
+func TestLoginQRAlreadyLoggedIn(t *testing.T) {
+	d := newTestDaemon(t, &fakeClient{paired: true})
+	resp := handle(t, d, "login-qr", nil)
+	if resp.OK || resp.Error != api.ErrAlreadyLoggedIn {
+		t.Fatalf("resp = %+v, want already_logged_in", resp)
+	}
+}
+
+func TestLoginQRChannelError(t *testing.T) {
+	fc := &fakeClient{paired: false, qrErr: io.ErrUnexpectedEOF}
+	d := newTestDaemon(t, fc)
+	resp := handle(t, d, "login-qr", nil)
+	if resp.OK || resp.Error != api.ErrLoginFailed {
+		t.Fatalf("resp = %+v, want login_failed", resp)
+	}
+}
+
+func TestLoginQRNoCode(t *testing.T) {
+	// Channel closes before any "code" item is emitted.
+	fc := &fakeClient{paired: false, qrItems: nil}
+	d := newTestDaemon(t, fc)
+	resp := handle(t, d, "login-qr", nil)
 	if resp.OK || resp.Error != api.ErrLoginFailed {
 		t.Fatalf("resp = %+v, want login_failed", resp)
 	}

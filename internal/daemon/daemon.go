@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/busfactor/whatsmeow-cli/internal/api"
@@ -20,20 +21,33 @@ import (
 const (
 	pairingExpirySeconds = 160
 	loginInstructions    = "On the phone: WhatsApp -> Settings -> Linked Devices -> Link a device -> 'Link with phone number instead' -> enter this code."
+
+	qrConnectTimeout        = 15 * time.Second
+	qrFirstCodeTimeout      = 15 * time.Second
+	qrExpiryFallbackSeconds = 60
+	qrLoginInstructions     = "On the phone: WhatsApp -> Settings -> Linked Devices -> Link a device -> scan this QR code."
 )
 
-// Daemon answers CLI requests and stores incoming messages. Its only shared
-// mutable state is the store (a concurrency-safe *sql.DB) and the whatsmeow
-// client (safe for concurrent use); no additional locking is required here.
+// Daemon answers CLI requests and stores incoming messages. Its shared mutable
+// state is the store (a concurrency-safe *sql.DB), the whatsmeow client (safe
+// for concurrent use), and the qrActive flag guarded by qrMu. baseCtx is a
+// daemon-lifetime context used for background work (the QR login session) that
+// must outlive a single request; it is canceled by Close.
 type Daemon struct {
-	client wa.Client
-	store  *store.Store
-	log    *slog.Logger
+	client  wa.Client
+	store   *store.Store
+	log     *slog.Logger
+	baseCtx context.Context
+	cancel  context.CancelFunc
+
+	qrMu     sync.Mutex
+	qrActive bool
 }
 
 // New builds a Daemon and registers its event handler on the client.
 func New(client wa.Client, st *store.Store, logger *slog.Logger) *Daemon {
-	d := &Daemon{client: client, store: st, log: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	d := &Daemon{client: client, store: st, log: logger, baseCtx: ctx, cancel: cancel}
 	client.AddEventHandler(d.handleEvent)
 	return d
 }
@@ -49,6 +63,8 @@ func (d *Daemon) Handle(ctx context.Context, req ipc.Request) ipc.Response {
 			return ipc.Err(api.ErrUsage, err.Error())
 		}
 		return d.login(ctx, args)
+	case "login-qr":
+		return d.loginQR()
 	case "logout":
 		var args api.LogoutArgs
 		if err := req.Bind(&args); err != nil {
@@ -115,6 +131,98 @@ func (d *Daemon) login(ctx context.Context, args api.LoginArgs) ipc.Response {
 		ExpiresInSeconds: pairingExpirySeconds,
 		Instructions:     loginInstructions,
 	})
+}
+
+// loginQR starts a QR login and returns the first scannable code. Unlike the
+// pairing-code flow, whatsmeow requires GetQRChannel *before* Connect, and both
+// run on the daemon-lifetime baseCtx (not the per-request context, which is
+// canceled once this response is written). The session is left running in a
+// background goroutine so a scan can complete asynchronously via the shared
+// *events.PairSuccess handler; the caller polls `wa status` for completion.
+func (d *Daemon) loginQR() ipc.Response {
+	if _, paired := d.client.OwnID(); paired {
+		return ipc.Err(api.ErrAlreadyLoggedIn, "device is already linked")
+	}
+
+	d.qrMu.Lock()
+	if d.qrActive {
+		d.qrMu.Unlock()
+		return ipc.Err(api.ErrLoginFailed, "qr login already in progress; wait for it to expire or restart the daemon")
+	}
+	d.qrActive = true
+	d.qrMu.Unlock()
+
+	ch, err := d.client.GetQRChannel(d.baseCtx)
+	if err != nil {
+		d.clearQR()
+		return ipc.Err(api.ErrLoginFailed, err.Error())
+	}
+
+	connectCtx, cancel := context.WithTimeout(d.baseCtx, qrConnectTimeout)
+	defer cancel()
+	if err := d.client.Connect(connectCtx); err != nil {
+		d.clearQR()
+		d.client.Disconnect()
+		return ipc.Err(api.ErrLoginFailed, err.Error())
+	}
+
+	select {
+	case item, more := <-ch:
+		if !more {
+			d.clearQR()
+			d.client.Disconnect()
+			return ipc.Err(api.ErrLoginFailed, "qr channel closed before a code was issued")
+		}
+		if item.Event != "code" {
+			d.clearQR()
+			d.client.Disconnect()
+			return ipc.Err(api.ErrLoginFailed, "unexpected qr event: "+item.Event)
+		}
+		rendered, err := wa.RenderQR(item.Code)
+		if err != nil {
+			d.clearQR()
+			d.client.Disconnect()
+			return ipc.Err(api.ErrLoginFailed, err.Error())
+		}
+		// Keep consuming the channel so the session stays alive until the user
+		// scans (PairSuccess) or it times out.
+		go d.drainQR(ch)
+		expires := int(item.Timeout.Seconds())
+		if expires <= 0 {
+			expires = qrExpiryFallbackSeconds
+		}
+		return ok(api.LoginQRResult{
+			QR:               rendered,
+			ExpiresInSeconds: expires,
+			Instructions:     qrLoginInstructions,
+		})
+	case <-time.After(qrFirstCodeTimeout):
+		d.clearQR()
+		d.client.Disconnect()
+		return ipc.Err(api.ErrLoginFailed, "timed out waiting for qr code")
+	}
+}
+
+// drainQR consumes the remaining QR events after the first code was returned,
+// logging the terminal outcome and releasing the qrActive guard.
+func (d *Daemon) drainQR(ch <-chan wa.QRItem) {
+	for item := range ch {
+		switch item.Event {
+		case "success":
+			d.log.Info("qr pair success")
+		case "timeout":
+			d.log.Info("qr login timed out")
+		case "error":
+			d.log.Warn("qr login error", "err", item.Err)
+		}
+	}
+	d.clearQR()
+}
+
+func (d *Daemon) clearQR() {
+	d.qrMu.Lock()
+	d.qrActive = false
+	d.qrMu.Unlock()
 }
 
 func (d *Daemon) logout(ctx context.Context, args api.LogoutArgs) ipc.Response {

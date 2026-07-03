@@ -92,6 +92,18 @@ func newLoginCmd() *cobra.Command {
 	}
 }
 
+func newLoginQRCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "login-qr",
+		Short: "Link an account by scanning a QR code",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			runRemote("login-qr", nil)
+			return nil
+		},
+	}
+}
+
 func newLogoutCmd() *cobra.Command {
 	var purge bool
 	cmd := &cobra.Command{
