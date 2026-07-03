@@ -88,6 +88,14 @@ Success prints JSON to stdout and exits 0. Failure prints
 
 (`wa status` reports `{"daemon":"stopped"}` with exit 0 when the daemon is down.)
 
+## Claude skill
+
+`skills/wa/SKILL.md` is a Claude skill that drives this CLI (binary
+resolution, daemon preflight, linking, sending with confirmation rules,
+reading without leaking read receipts). It is not auto-loaded from here: copy
+or symlink it into your user scope, e.g.
+`ln -s "$(pwd)/skills/wa" ~/.claude/skills/wa`.
+
 ## Development
 
 ```
