@@ -42,6 +42,8 @@ type Client interface {
 	MarkRead(ctx context.Context, ids []types.MessageID, chat, sender types.JID) error
 	OwnID() (jid types.JID, paired bool)
 	PushName() string
+	ContactName(ctx context.Context, jid types.JID) (name string, ok bool)
+	GroupName(ctx context.Context, jid types.JID) (name string, ok bool)
 }
 
 // RealClient adapts *whatsmeow.Client to the Client interface.
@@ -173,4 +175,28 @@ func (r *RealClient) PushName() string {
 		return ""
 	}
 	return r.cli.Store.PushName
+}
+
+// ContactName returns the best cached display name for a user JID (address-book
+// name preferred over push name), or ok=false when the contact store has none.
+// It is best-effort: a nil store or lookup error yields ("", false).
+func (r *RealClient) ContactName(ctx context.Context, jid types.JID) (string, bool) {
+	if r.cli.Store == nil || r.cli.Store.Contacts == nil {
+		return "", false
+	}
+	info, err := r.cli.Store.Contacts.GetContact(ctx, jid)
+	if err != nil || !info.Found {
+		return "", false
+	}
+	return PickContactName(info)
+}
+
+// GroupName returns a group's subject, or ok=false when it cannot be fetched.
+// GetGroupInfo is a network call; callers should cache the result.
+func (r *RealClient) GroupName(ctx context.Context, jid types.JID) (string, bool) {
+	gi, err := r.cli.GetGroupInfo(ctx, jid)
+	if err != nil {
+		return "", false
+	}
+	return gi.Name, gi.Name != ""
 }

@@ -39,6 +39,10 @@ type Daemon struct {
 	baseCtx context.Context
 	cancel  context.CancelFunc
 
+	// groups caches resolved group subjects across requests (GetGroupInfo is a
+	// network call). It is safe for concurrent use.
+	groups *groupCache
+
 	qrMu     sync.Mutex
 	qrActive bool
 }
@@ -46,7 +50,7 @@ type Daemon struct {
 // New builds a Daemon and registers its event handler on the client.
 func New(client wa.Client, st *store.Store, logger *slog.Logger) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &Daemon{client: client, store: st, log: logger, baseCtx: ctx, cancel: cancel}
+	d := &Daemon{client: client, store: st, log: logger, baseCtx: ctx, cancel: cancel, groups: newGroupCache()}
 	client.AddEventHandler(d.handleEvent)
 	return d
 }
@@ -308,6 +312,13 @@ func (d *Daemon) messages(ctx context.Context, args api.MessagesArgs) ipc.Respon
 	if args.MarkRead {
 		d.sendReadReceipts(ctx, msgs)
 	}
+	if len(msgs) > 0 {
+		r := newNameResolver(d.client, d.groups)
+		for i := range msgs {
+			msgs[i].ChatName = r.chatName(ctx, msgs[i].ChatJID, msgs[i].IsGroup, msgs[i].ChatName)
+			msgs[i].SenderName = r.contactName(ctx, msgs[i].SenderJID, msgs[i].SenderName)
+		}
+	}
 	if msgs == nil {
 		msgs = []store.Message{}
 	}
@@ -318,6 +329,12 @@ func (d *Daemon) chats(ctx context.Context, args api.ChatsArgs) ipc.Response {
 	chats, err := d.store.Chats(ctx, args.Limit)
 	if err != nil {
 		return ipc.Err(api.ErrGeneric, err.Error())
+	}
+	if len(chats) > 0 {
+		r := newNameResolver(d.client, d.groups)
+		for i := range chats {
+			chats[i].Name = r.chatName(ctx, chats[i].JID, chats[i].IsGroup, chats[i].Name)
+		}
 	}
 	if chats == nil {
 		chats = []store.ChatSummary{}
@@ -366,6 +383,13 @@ func (d *Daemon) handleEvent(evt any) {
 		d.log.Warn("logged out", "reason", v.Reason.String())
 	case *events.PairSuccess:
 		d.log.Info("pair success", "jid", v.ID.String())
+	case *events.GroupInfo:
+		// A rename event already carries the new subject; apply it directly so
+		// the next read serves it without another fetch (and so it wins over any
+		// in-flight fetch of the old name).
+		if v.Name != nil {
+			d.groups.rename(v.JID.String(), v.Name.Name)
+		}
 	}
 }
 

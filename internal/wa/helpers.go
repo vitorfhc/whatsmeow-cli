@@ -4,6 +4,7 @@
 package wa
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -53,6 +54,15 @@ func ParseRecipient(s string) (types.JID, error) {
 		return types.JID{}, err
 	}
 	return types.NewJID(digits, types.DefaultUserServer), nil
+}
+
+// PickContactName selects the best display name from a cached contact,
+// preferring the address-book name over the contact's self-set push name:
+// FullName, then FirstName, then BusinessName, then PushName. It returns
+// ("", false) when none is set so callers can fall back to a JID.
+func PickContactName(info types.ContactInfo) (string, bool) {
+	name := cmp.Or(info.FullName, info.FirstName, info.BusinessName, info.PushName)
+	return name, name != ""
 }
 
 // ExtractContent returns a coarse message type and a display text for a

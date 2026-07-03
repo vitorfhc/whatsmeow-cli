@@ -56,6 +56,49 @@ func TestParseRecipientInvalid(t *testing.T) {
 	}
 }
 
+func TestPickContactName(t *testing.T) {
+	cases := []struct {
+		name     string
+		info     types.ContactInfo
+		wantName string
+		wantOK   bool
+	}{
+		{
+			name:   "all empty",
+			info:   types.ContactInfo{},
+			wantOK: false,
+		},
+		{
+			name:     "full name wins over everything",
+			info:     types.ContactInfo{FullName: "Full", FirstName: "First", BusinessName: "Biz", PushName: "Push"},
+			wantName: "Full", wantOK: true,
+		},
+		{
+			name:     "first name when no full name",
+			info:     types.ContactInfo{FirstName: "First", BusinessName: "Biz", PushName: "Push"},
+			wantName: "First", wantOK: true,
+		},
+		{
+			name:     "business name when no full or first",
+			info:     types.ContactInfo{BusinessName: "Biz", PushName: "Push"},
+			wantName: "Biz", wantOK: true,
+		},
+		{
+			name:     "push name as last resort",
+			info:     types.ContactInfo{PushName: "Push"},
+			wantName: "Push", wantOK: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			gotName, gotOK := PickContactName(c.info)
+			if gotName != c.wantName || gotOK != c.wantOK {
+				t.Errorf("PickContactName(%+v) = (%q, %v), want (%q, %v)", c.info, gotName, gotOK, c.wantName, c.wantOK)
+			}
+		})
+	}
+}
+
 func TestExtractContent(t *testing.T) {
 	cases := []struct {
 		name     string

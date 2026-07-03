@@ -47,6 +47,10 @@ type fakeClient struct {
 	logoutErr       error
 	logoutCalled    bool
 	markReadIDs     []types.MessageID
+	contactNames    map[string]string // jid.String() -> resolved contact name
+	groupNames      map[string]string // jid.String() -> group subject
+	contactCalls    int
+	groupInfoCalls  int
 }
 
 func (f *fakeClient) AddEventHandler(h func(evt any)) { f.handler = h }
@@ -125,6 +129,20 @@ func (f *fakeClient) MarkRead(_ context.Context, ids []types.MessageID, _, _ typ
 	f.markReadIDs = append(f.markReadIDs, ids...)
 	return nil
 }
+func (f *fakeClient) ContactName(_ context.Context, jid types.JID) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.contactCalls++
+	name, ok := f.contactNames[jid.String()]
+	return name, ok
+}
+func (f *fakeClient) GroupName(_ context.Context, jid types.JID) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.groupInfoCalls++
+	name, ok := f.groupNames[jid.String()]
+	return name, ok
+}
 func (f *fakeClient) emit(evt any) {
 	if f.handler != nil {
 		f.handler(evt)
@@ -164,6 +182,23 @@ func incomingMessage(id, chat, text string) *events.Message {
 			ID:            id,
 			PushName:      "Tester",
 			Timestamp:     time.Unix(1_700_000_000, 0).UTC(),
+		},
+		Message: &waE2E.Message{Conversation: proto.String(text)},
+	}
+}
+
+func groupMessage(id, group, sender, pushName, text string) *events.Message {
+	return &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:     types.NewJID(group, types.GroupServer),
+				Sender:   types.NewJID(sender, types.DefaultUserServer),
+				IsGroup:  true,
+				IsFromMe: false,
+			},
+			ID:        id,
+			PushName:  pushName,
+			Timestamp: time.Unix(1_700_000_000, 0).UTC(),
 		},
 		Message: &waE2E.Message{Conversation: proto.String(text)},
 	}
@@ -518,23 +553,12 @@ func TestLoginRejectsTooShortPhone(t *testing.T) {
 }
 
 func TestGroupMessageHasNoChatName(t *testing.T) {
+	// Offline with no contact/group data: enrichment must fall back to stored
+	// values (empty group chat_name, sender push name), never blocking on a
+	// network lookup.
 	fc := &fakeClient{paired: true}
 	d := newTestDaemon(t, fc)
-	evt := &events.Message{
-		Info: types.MessageInfo{
-			MessageSource: types.MessageSource{
-				Chat:     types.NewJID("120363000000000000", types.GroupServer),
-				Sender:   types.NewJID("5511777777777", types.DefaultUserServer),
-				IsGroup:  true,
-				IsFromMe: false,
-			},
-			ID:        "g1",
-			PushName:  "Alice",
-			Timestamp: time.Unix(1_700_000_000, 0).UTC(),
-		},
-		Message: &waE2E.Message{Conversation: proto.String("hello group")},
-	}
-	fc.emit(evt)
+	fc.emit(groupMessage("g1", "120363000000000000", "5511777777777", "Alice", "hello group"))
 
 	resp := handle(t, d, "messages", api.MessagesArgs{All: true})
 	var msgs []store.Message
