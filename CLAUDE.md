@@ -88,6 +88,12 @@ If the tag already exists, the workflow exits successfully without creating
 another release. Bump `VERSION.txt` before merging when a new release is
 intended.
 
+Follow semantic versioning for `VERSION.txt`: patch increments are for bug
+fixes, minor increments are for new features, and major increments are for
+breaking changes. Do not change `VERSION.txt` for documentation-only or
+agent-instruction-only edits such as `README.md`, `CLAUDE.md`, `AGENTS.md`, or
+skill text unless the same change also modifies released code behavior.
+
 ## whatsmeow Go-version gotcha
 
 `whatsmeow@latest` requires **Go ≥ 1.25** (its `go.mod` sets a `go1.26`
