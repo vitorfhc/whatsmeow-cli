@@ -3,7 +3,7 @@ name: wa
 description: Use when the user wants to send a WhatsApp message, read or check WhatsApp messages, list WhatsApp chats or conversations, wait for a WhatsApp reply, or link/unlink their WhatsApp account from this machine — anything driving the local `wa` CLI (whatsmeow daemon). Not for general questions about the WhatsApp app, protocol, or encryption.
 ---
 
-# wa — WhatsApp CLI
+# WhatsApp CLI Automation (`wa`)
 
 ## Overview
 

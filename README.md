@@ -101,13 +101,15 @@ Success prints JSON to stdout and exits 0. Failure prints
 
 (`wa status` reports `{"daemon":"stopped"}` with exit 0 when the daemon is down.)
 
-## Claude skill
+## Agent skill
 
-`skills/wa/SKILL.md` is a Claude skill that drives this CLI (binary
+`skills/wa/SKILL.md` is an agent skill that drives this CLI (binary
 resolution, daemon preflight, linking, sending with confirmation rules,
-reading without leaking read receipts). It is not auto-loaded from here: copy
-or symlink it into your user scope, e.g.
-`ln -s "$(pwd)/skills/wa" ~/.claude/skills/wa`.
+reading without leaking read receipts). Install it with:
+
+```
+npx --yes skills add vitorfhc/whatsmeow-cli --skill wa
+```
 
 ## Development
 
