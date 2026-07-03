@@ -107,7 +107,9 @@ func (r *RealClient) PairPhone(ctx context.Context, phone string) (string, error
 // GetQRChannel starts a QR login and returns a channel of QR events. whatsmeow
 // requires this to be called before Connect and only when the device is not
 // yet linked (Store.ID == nil). Each whatsmeow item is translated to a wa.QRItem
-// so the interface stays free of the whatsmeow dependency.
+// so the interface stays free of the whatsmeow dependency. Canceling ctx unwinds
+// the translation goroutine even if whatsmeow never closes the source channel
+// (e.g. an expected Disconnect, which whatsmeow does not use to close it).
 func (r *RealClient) GetQRChannel(ctx context.Context) (<-chan QRItem, error) {
 	src, err := r.cli.GetQRChannel(ctx)
 	if err != nil {
@@ -116,12 +118,24 @@ func (r *RealClient) GetQRChannel(ctx context.Context) (<-chan QRItem, error) {
 	out := make(chan QRItem, 8)
 	go func() {
 		defer close(out)
-		for item := range src {
-			out <- QRItem{
-				Event:   item.Event,
-				Code:    item.Code,
-				Timeout: item.Timeout,
-				Err:     item.Error,
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case item, ok := <-src:
+				if !ok {
+					return
+				}
+				select {
+				case out <- QRItem{
+					Event:   item.Event,
+					Code:    item.Code,
+					Timeout: item.Timeout,
+					Err:     item.Error,
+				}:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

@@ -22,7 +22,6 @@ const (
 	pairingExpirySeconds = 160
 	loginInstructions    = "On the phone: WhatsApp -> Settings -> Linked Devices -> Link a device -> 'Link with phone number instead' -> enter this code."
 
-	qrConnectTimeout        = 15 * time.Second
 	qrFirstCodeTimeout      = 15 * time.Second
 	qrExpiryFallbackSeconds = 60
 	qrLoginInstructions     = "On the phone: WhatsApp -> Settings -> Linked Devices -> Link a device -> scan this QR code."
@@ -118,7 +117,12 @@ func (d *Daemon) login(ctx context.Context, args api.LoginArgs) ipc.Response {
 		return ipc.Err(api.ErrLoginFailed, err.Error())
 	}
 	if !d.client.IsConnected() {
-		if err := d.client.Connect(ctx); err != nil {
+		// Connect on the daemon-lifetime context, not the per-request ctx:
+		// whatsmeow ties the connection's lifetime to the ctx passed to Connect,
+		// so a request-scoped ctx would tear the socket down (and stop event
+		// dispatch) as soon as this handler returns — before the user enters the
+		// pairing code and PairSuccess can fire.
+		if err := d.client.Connect(d.baseCtx); err != nil {
 			return ipc.Err(api.ErrLoginFailed, err.Error())
 		}
 	}
@@ -133,15 +137,23 @@ func (d *Daemon) login(ctx context.Context, args api.LoginArgs) ipc.Response {
 	})
 }
 
-// loginQR starts a QR login and returns the first scannable code. Unlike the
-// pairing-code flow, whatsmeow requires GetQRChannel *before* Connect, and both
-// run on the daemon-lifetime baseCtx (not the per-request context, which is
-// canceled once this response is written). The session is left running in a
-// background goroutine so a scan can complete asynchronously via the shared
-// *events.PairSuccess handler; the caller polls `wa status` for completion.
+// loginQR starts a QR login and returns the first scannable code. whatsmeow
+// requires GetQRChannel *before* Connect. Connect runs on the daemon-lifetime
+// baseCtx because whatsmeow ties the connection's lifetime to that ctx — a
+// per-request ctx would tear the socket down once this response is written,
+// before the user can scan. The QR channel runs on a per-session context so an
+// aborted attempt can be torn down without affecting the connection; on success
+// the session is left running in a background goroutine so the scan can complete
+// asynchronously via the shared *events.PairSuccess handler, and the caller
+// polls `wa status` for completion.
 func (d *Daemon) loginQR() ipc.Response {
 	if _, paired := d.client.OwnID(); paired {
 		return ipc.Err(api.ErrAlreadyLoggedIn, "device is already linked")
+	}
+	// whatsmeow's GetQRChannel requires the client to be disconnected; surface a
+	// clear error instead of its internal "must be called before connecting".
+	if d.client.IsConnected() {
+		return ipc.Err(api.ErrLoginFailed, "client is already connected; run 'wa logout' or restart the daemon before qr login")
 	}
 
 	d.qrMu.Lock()
@@ -152,41 +164,48 @@ func (d *Daemon) loginQR() ipc.Response {
 	d.qrActive = true
 	d.qrMu.Unlock()
 
-	ch, err := d.client.GetQRChannel(d.baseCtx)
-	if err != nil {
-		d.clearQR()
-		return ipc.Err(api.ErrLoginFailed, err.Error())
-	}
+	// sessionCtx bounds only the QR channel (whatsmeow's QR emitter), not the
+	// connection. Canceling it closes the channel and unwinds the translation
+	// goroutine even on an expected Disconnect, which whatsmeow does not use to
+	// close the channel.
+	sessionCtx, sessionCancel := context.WithCancel(d.baseCtx)
 
-	connectCtx, cancel := context.WithTimeout(d.baseCtx, qrConnectTimeout)
-	defer cancel()
-	if err := d.client.Connect(connectCtx); err != nil {
-		d.clearQR()
+	// abort tears down a failed attempt: cancel the QR session (closing the
+	// channel), drop the connection, and release the guard.
+	abort := func(msg string) ipc.Response {
+		sessionCancel()
 		d.client.Disconnect()
-		return ipc.Err(api.ErrLoginFailed, err.Error())
+		d.clearQR()
+		return ipc.Err(api.ErrLoginFailed, msg)
 	}
 
+	ch, err := d.client.GetQRChannel(sessionCtx)
+	if err != nil {
+		sessionCancel()
+		d.clearQR()
+		return ipc.Err(api.ErrLoginFailed, err.Error())
+	}
+	if err := d.client.Connect(d.baseCtx); err != nil {
+		return abort(err.Error())
+	}
+
+	timer := time.NewTimer(qrFirstCodeTimeout)
+	defer timer.Stop()
 	select {
 	case item, more := <-ch:
 		if !more {
-			d.clearQR()
-			d.client.Disconnect()
-			return ipc.Err(api.ErrLoginFailed, "qr channel closed before a code was issued")
+			return abort("qr channel closed before a code was issued")
 		}
 		if item.Event != "code" {
-			d.clearQR()
-			d.client.Disconnect()
-			return ipc.Err(api.ErrLoginFailed, "unexpected qr event: "+item.Event)
+			return abort("unexpected qr event: " + item.Event)
 		}
 		rendered, err := wa.RenderQR(item.Code)
 		if err != nil {
-			d.clearQR()
-			d.client.Disconnect()
-			return ipc.Err(api.ErrLoginFailed, err.Error())
+			return abort(err.Error())
 		}
 		// Keep consuming the channel so the session stays alive until the user
 		// scans (PairSuccess) or it times out.
-		go d.drainQR(ch)
+		go d.drainQR(ch, sessionCancel)
 		expires := int(item.Timeout.Seconds())
 		if expires <= 0 {
 			expires = qrExpiryFallbackSeconds
@@ -196,16 +215,15 @@ func (d *Daemon) loginQR() ipc.Response {
 			ExpiresInSeconds: expires,
 			Instructions:     qrLoginInstructions,
 		})
-	case <-time.After(qrFirstCodeTimeout):
-		d.clearQR()
-		d.client.Disconnect()
-		return ipc.Err(api.ErrLoginFailed, "timed out waiting for qr code")
+	case <-timer.C:
+		return abort("timed out waiting for qr code")
 	}
 }
 
 // drainQR consumes the remaining QR events after the first code was returned,
-// logging the terminal outcome and releasing the qrActive guard.
-func (d *Daemon) drainQR(ch <-chan wa.QRItem) {
+// logging the terminal outcome, then cancels the session context (releasing the
+// translation goroutine) and the qrActive guard.
+func (d *Daemon) drainQR(ch <-chan wa.QRItem, sessionCancel context.CancelFunc) {
 	for item := range ch {
 		switch item.Event {
 		case "success":
@@ -216,6 +234,7 @@ func (d *Daemon) drainQR(ch <-chan wa.QRItem) {
 			d.log.Warn("qr login error", "err", item.Err)
 		}
 	}
+	sessionCancel()
 	d.clearQR()
 }
 

@@ -36,6 +36,7 @@ type fakeClient struct {
 	qrItems         []wa.QRItem
 	qrErr           error
 	qrChannelCalled bool
+	qrBeforeConnect bool
 	connectCalled   bool
 	pairPhoneArg    string
 	sentID          string
@@ -96,6 +97,8 @@ func (f *fakeClient) GetQRChannel(context.Context) (<-chan wa.QRItem, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.qrChannelCalled = true
+	// Record the whatsmeow-mandated ordering: GetQRChannel must run before Connect.
+	f.qrBeforeConnect = !f.connectCalled
 	if f.qrErr != nil {
 		return nil, f.qrErr
 	}
@@ -289,8 +292,10 @@ func TestLoginFailure(t *testing.T) {
 }
 
 func TestLoginQRReturnsCode(t *testing.T) {
+	// Timeout is deliberately not 60s (== qrExpiryFallbackSeconds) so the
+	// assertion distinguishes a real echo of item.Timeout from the fallback.
 	fc := &fakeClient{paired: false, qrItems: []wa.QRItem{
-		{Event: "code", Code: "2@ABC,DEF,GHI", Timeout: 60 * time.Second},
+		{Event: "code", Code: "2@ABC,DEF,GHI", Timeout: 45 * time.Second},
 		{Event: "success"},
 	}}
 	d := newTestDaemon(t, fc)
@@ -305,8 +310,8 @@ func TestLoginQRReturnsCode(t *testing.T) {
 	if r.QR == "" {
 		t.Error("expected a rendered QR block")
 	}
-	if r.ExpiresInSeconds != 60 {
-		t.Errorf("ExpiresInSeconds = %d, want 60", r.ExpiresInSeconds)
+	if r.ExpiresInSeconds != 45 {
+		t.Errorf("ExpiresInSeconds = %d, want 45 (echo of item.Timeout)", r.ExpiresInSeconds)
 	}
 	if r.Instructions == "" {
 		t.Error("expected instructions")
@@ -316,6 +321,9 @@ func TestLoginQRReturnsCode(t *testing.T) {
 	}
 	if !fc.connectCalled {
 		t.Error("expected Connect to be called")
+	}
+	if !fc.qrBeforeConnect {
+		t.Error("GetQRChannel must be called before Connect (whatsmeow requirement)")
 	}
 }
 
@@ -327,12 +335,44 @@ func TestLoginQRAlreadyLoggedIn(t *testing.T) {
 	}
 }
 
+func TestLoginQRAlreadyConnected(t *testing.T) {
+	d := newTestDaemon(t, &fakeClient{paired: false, connected: true})
+	resp := handle(t, d, "login-qr", nil)
+	if resp.OK || resp.Error != api.ErrLoginFailed {
+		t.Fatalf("resp = %+v, want login_failed (already connected)", resp)
+	}
+}
+
+func TestLoginQRAlreadyInProgress(t *testing.T) {
+	d := newTestDaemon(t, &fakeClient{paired: false})
+	// Simulate a live QR session already holding the guard.
+	d.qrMu.Lock()
+	d.qrActive = true
+	d.qrMu.Unlock()
+	resp := handle(t, d, "login-qr", nil)
+	if resp.OK || resp.Error != api.ErrLoginFailed {
+		t.Fatalf("resp = %+v, want login_failed (in progress)", resp)
+	}
+}
+
 func TestLoginQRChannelError(t *testing.T) {
 	fc := &fakeClient{paired: false, qrErr: io.ErrUnexpectedEOF}
 	d := newTestDaemon(t, fc)
 	resp := handle(t, d, "login-qr", nil)
 	if resp.OK || resp.Error != api.ErrLoginFailed {
 		t.Fatalf("resp = %+v, want login_failed", resp)
+	}
+}
+
+func TestLoginQRUnexpectedFirstEvent(t *testing.T) {
+	// First event is a terminal error rather than a "code".
+	fc := &fakeClient{paired: false, qrItems: []wa.QRItem{
+		{Event: "error", Err: io.ErrUnexpectedEOF},
+	}}
+	d := newTestDaemon(t, fc)
+	resp := handle(t, d, "login-qr", nil)
+	if resp.OK || resp.Error != api.ErrLoginFailed {
+		t.Fatalf("resp = %+v, want login_failed (unexpected event)", resp)
 	}
 }
 
