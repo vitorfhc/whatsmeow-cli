@@ -60,6 +60,16 @@ lapses, wait for the session to time out and rerun `wa login-qr`.
 Global flags: `--data-dir DIR` (default `$WA_CLI_HOME` or `~/.wa-cli`),
 `--pretty` (indent JSON).
 
+## Names
+
+`wa chats` and `wa messages` resolve JIDs to display names at read time. The
+`name` / `chat_name` / `sender_name` fields carry the address-book name
+(preferring full name, then first/business name, then the contact's push name,
+and finally the raw JID), and group chats show the group subject. The canonical
+JID is always kept in the `jid` / `chat` / `sender` fields for addressing.
+Address-book names appear once WhatsApp's contact sync completes after linking;
+until then names fall back to the push name.
+
 ## Output & exit codes
 
 Success prints JSON to stdout and exits 0. Failure prints
