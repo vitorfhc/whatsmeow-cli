@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/busfactor/whatsmeow-cli/internal/api"
-	"github.com/busfactor/whatsmeow-cli/internal/store"
+	"github.com/vitorfhc/whatsmeow-cli/internal/api"
+	"github.com/vitorfhc/whatsmeow-cli/internal/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )

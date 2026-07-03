@@ -20,6 +20,19 @@ make build        # produces ./wa
 # or: go build -o wa ./cmd/wa
 ```
 
+## Install
+
+Install the latest release:
+
+```
+go install github.com/vitorfhc/whatsmeow-cli/cmd/wa@latest
+```
+
+This installs `wa` into `$GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is
+unset. Make sure that directory is on your `PATH` before running `wa`.
+
+From a local checkout, use `go install ./cmd/wa`.
+
 ## Quick start
 
 ```

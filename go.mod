@@ -1,4 +1,4 @@
-module github.com/busfactor/whatsmeow-cli
+module github.com/vitorfhc/whatsmeow-cli
 
 go 1.25.0
 

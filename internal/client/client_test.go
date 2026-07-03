@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/busfactor/whatsmeow-cli/internal/ipc"
+	"github.com/vitorfhc/whatsmeow-cli/internal/ipc"
 )
 
 func TestPrintResponseOK(t *testing.T) {

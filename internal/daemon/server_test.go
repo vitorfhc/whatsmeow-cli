@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/busfactor/whatsmeow-cli/internal/api"
-	"github.com/busfactor/whatsmeow-cli/internal/ipc"
+	"github.com/vitorfhc/whatsmeow-cli/internal/api"
+	"github.com/vitorfhc/whatsmeow-cli/internal/ipc"
 )
 
 func startServer(t *testing.T, d *Daemon) (string, chan error) {

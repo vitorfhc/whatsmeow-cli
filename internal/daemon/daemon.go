@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/busfactor/whatsmeow-cli/internal/api"
-	"github.com/busfactor/whatsmeow-cli/internal/ipc"
-	"github.com/busfactor/whatsmeow-cli/internal/store"
-	"github.com/busfactor/whatsmeow-cli/internal/wa"
+	"github.com/vitorfhc/whatsmeow-cli/internal/api"
+	"github.com/vitorfhc/whatsmeow-cli/internal/ipc"
+	"github.com/vitorfhc/whatsmeow-cli/internal/store"
+	"github.com/vitorfhc/whatsmeow-cli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )

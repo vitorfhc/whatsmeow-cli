@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/busfactor/whatsmeow-cli/internal/api"
-	"github.com/busfactor/whatsmeow-cli/internal/client"
-	"github.com/busfactor/whatsmeow-cli/internal/ipc"
 	"github.com/spf13/cobra"
+	"github.com/vitorfhc/whatsmeow-cli/internal/api"
+	"github.com/vitorfhc/whatsmeow-cli/internal/client"
+	"github.com/vitorfhc/whatsmeow-cli/internal/ipc"
 )
 
 // emit prints a response and records the exit code.

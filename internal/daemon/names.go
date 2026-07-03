@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/busfactor/whatsmeow-cli/internal/wa"
+	"github.com/vitorfhc/whatsmeow-cli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 )
 

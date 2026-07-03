@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/busfactor/whatsmeow-cli/internal/config"
 	"github.com/spf13/cobra"
+	"github.com/vitorfhc/whatsmeow-cli/internal/config"
 )
 
 // exitCode is set by commands and used as the process exit code.

@@ -19,8 +19,9 @@ are visible to other people.
 1. `command -v wa` → use it.
 2. Else use the whatsmeow-cli checkout this skill ships in (on this machine
    `~/Projects/whatsmeow-cli`): run `./wa`; if missing, `make build`
-   (Go ≥ 1.25 + C toolchain). Mention once that installing `wa` on PATH
-   avoids this; don't block on it.
+   (Go ≥ 1.25 + C toolchain). Mention once that installing `wa` on PATH with
+   `go install github.com/vitorfhc/whatsmeow-cli/cmd/wa@latest` avoids this;
+   don't block on it.
 
 ## Preflight (once per session)
 

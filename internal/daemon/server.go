@@ -8,8 +8,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/busfactor/whatsmeow-cli/internal/api"
-	"github.com/busfactor/whatsmeow-cli/internal/ipc"
+	"github.com/vitorfhc/whatsmeow-cli/internal/api"
+	"github.com/vitorfhc/whatsmeow-cli/internal/ipc"
 )
 
 // requestTimeout bounds a single request's handling so a stalled network
